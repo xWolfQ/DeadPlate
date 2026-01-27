@@ -64,7 +64,7 @@ function DeadPlate() {
     setDetectionResult('Czekanie na wyniki...');
 
     try {
-      const response = await fetch('/api/plate', {
+      const response = await fetch('/http://localhost:8080/api/plates/upload/plate', {
         method: 'POST',
         body: formData
       });
@@ -261,9 +261,6 @@ function DeadPlate() {
               <p className="no-file">Zaznacz obszar na zdjęciu, aby zobaczyć przycięcie.</p>
             )}
           </div>
-          <div className="log-box">
-            <pre>{computerResult}</pre>
-          </div>
         </div>
       </div>
 
@@ -271,7 +268,7 @@ function DeadPlate() {
         <h2>Wykryta rejestracja</h2>
         <input
           type="text"
-          value={detectionResult}
+          value={computerResult}
           readOnly
           className="result-input"
         />
