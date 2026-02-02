@@ -1,0 +1,5 @@
+ocr:
+  python: python3
+  work-dir: /app/opt/deadplate
+  input-image: plate.jpg
+  timeout: 5

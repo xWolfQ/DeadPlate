@@ -1,0 +1,62 @@
+# ========================
+# SYSTEM / IDE
+# ========================
+.idea/
+.vscode/
+*.iml
+
+# ========================
+# OS
+# ========================
+.DS_Store
+Thumbs.db
+
+# ========================
+# GIT
+# ========================
+*.log
+
+# ========================
+# BACKEND (Java / Maven)
+# ========================
+backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+
+# ========================
+# FRONTEND (React / Node)
+# ========================
+frontend/node_modules/
+frontend/build/
+frontend/.env
+frontend/.env.*
+
+# ========================
+# DOCKER
+# ========================
+**/docker-data/
+**/*.pid
+
+# ========================
+# PYTHON / OCR
+# ========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# ========================
+# UPLOADS / RUNTIME FILES
+# ========================
+uploads/
+*.jpg
+*.png
+
+# ========================
+# SECRETS
+# ========================
+*.env
+.env

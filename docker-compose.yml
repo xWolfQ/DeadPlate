@@ -1,0 +1,24 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: zmpo-backend
+    ports:
+      - "8080:8080"
+    networks:
+      - zmpo-net
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: zmpo-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - zmpo-net
+
+networks:
+  zmpo-net:
+    driver: bridge
