@@ -88,9 +88,9 @@ function DeadPlate() {
   const handleClick = (e) => {
     if (!imageRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
-    const x = clamp(e.clientX - rect.left, 0, rect.width);
-    const y = clamp(e.clientY - rect.top, 0, rect.height);
-    if (x < 0 || y < 0 || x > rect.width || y > rect.height) return;
+    if (rect.width === 0 || rect.height === 0) return;
+    const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
 
     if (!isSelecting) {
       selectionStartRef.current = { x, y };
@@ -113,7 +113,7 @@ function DeadPlate() {
       cropRectRef.current = newRect;
       setIsSelecting(false);
       selectionStartRef.current = null;
-      if (newRect.width > 5 && newRect.height > 5) {
+      if (newRect.width > 0.01 && newRect.height > 0.01) {
         generateCropped(newRect);
       }
     }
@@ -122,8 +122,9 @@ function DeadPlate() {
   const handleMouseMove = (e) => {
     if (!isSelecting || !imageRef.current || !selectionStartRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
-    const currentX = clamp(e.clientX - rect.left, 0, rect.width);
-    const currentY = clamp(e.clientY - rect.top, 0, rect.height);
+    if (rect.width === 0 || rect.height === 0) return;
+    const currentX = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const currentY = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     const { x: startX, y: startY } = selectionStartRef.current;
     const newRect = {
       x: Math.min(startX, currentX),
@@ -144,13 +145,11 @@ function DeadPlate() {
   const generateCropped = (rect) => {
     if (!filePreview || !imageRef.current) return;
     const imgEl = imageRef.current;
-    const { naturalWidth, naturalHeight, clientWidth, clientHeight } = imgEl;
-    const scaleX = naturalWidth / clientWidth;
-    const scaleY = naturalHeight / clientHeight;
-    const cropX = rect.x * scaleX;
-    const cropY = rect.y * scaleY;
-    const cropWidth = rect.width * scaleX;
-    const cropHeight = rect.height * scaleY;
+    const { naturalWidth, naturalHeight } = imgEl;
+    const cropX = rect.x * naturalWidth;
+    const cropY = rect.y * naturalHeight;
+    const cropWidth = rect.width * naturalWidth;
+    const cropHeight = rect.height * naturalHeight;
 
     const canvas = document.createElement('canvas');
     canvas.width = cropWidth;
@@ -221,14 +220,14 @@ function DeadPlate() {
                       });
                     }}
                   />
-                  {cropRect && (
+                  {cropRect && imageRef.current && (
                     <div
                       className="crop-rect"
                       style={{
-                        left: `${cropRect.x}px`,
-                        top: `${cropRect.y}px`,
-                        width: `${cropRect.width}px`,
-                        height: `${cropRect.height}px`
+                        left: `${cropRect.x * imageRef.current.clientWidth}px`,
+                        top: `${cropRect.y * imageRef.current.clientHeight}px`,
+                        width: `${cropRect.width * imageRef.current.clientWidth}px`,
+                        height: `${cropRect.height * imageRef.current.clientHeight}px`
                       }}
                     />
                   )}
