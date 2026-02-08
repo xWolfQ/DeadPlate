@@ -11,22 +11,19 @@ function DeadPlate() {
   const [isSelecting, setIsSelecting] = useState(false);
   const imageRef = useRef(null);
   const selectionStartRef = useRef(null);
-  const [computerResult, setComputerResult] = useState('Waiting for backend processing...');
+  const [computerResult, setComputerResult] = useState(
+    'Rejestracja: -\nPewność: -'
+  );
 
   useEffect(() => {
     return () => {
-      if (croppedPreview) {
-        URL.revokeObjectURL(croppedPreview);
-      }
+      if (croppedPreview) URL.revokeObjectURL(croppedPreview);
     };
   }, [croppedPreview]);
 
   const uploadFile = (e) => {
     const selectedFile = e.target.files[0];
-    if (!selectedFile) {
-      alert('Wybierz plik przed przesłaniem.');
-      return;
-    }
+    if (!selectedFile) return;
 
     if (!selectedFile.type.startsWith('image/')) {
       alert('Proszę przesłać plik graficzny.');
@@ -42,10 +39,7 @@ function DeadPlate() {
     setIsSelecting(false);
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setFilePreview(event.target.result);
-      console.log('File preview set:', event.target.result.substring(0, 50));
-    };
+    reader.onload = (event) => setFilePreview(event.target.result);
     reader.readAsDataURL(selectedFile);
   };
 
@@ -59,7 +53,7 @@ function DeadPlate() {
     const payload = croppedBlob || file;
     formData.append('image', payload, payload.name || 'cropped.png');
 
-    setComputerResult('Wysyłanie na backend...');
+    setComputerResult('Przetwarzanie...');
 
     try {
       const response = await fetch('http://localhost:8080/api/plates/upload', {
@@ -67,19 +61,25 @@ function DeadPlate() {
         body: formData
       });
 
-  
-
       const data = await response.json();
-
       console.log('Odpowiedź z backendu:', data);
-      const plateText = typeof data?.plateText === 'string'
-        ? data.plateText.trim()
-        : '';
-      setComputerResult(plateText || 'Brak wyniku z backendu.');
+
+      const plate = data?.plate ?? '-';
+      const confidence =
+        typeof data?.confidence === 'number' ? `${data.confidence}%` : '-';
+
+      const debug =
+        Array.isArray(data?.confidence_debug)
+          ? data.confidence_debug.join('\n')
+          : '-';
+
+      setComputerResult(
+        `Rejestracja: ${plate}\n` +
+        `Pewność: ${confidence}\n\n`
+      );
     } catch (error) {
       console.error('Błąd:', error);
       setComputerResult(`Błąd: ${error.message}`);
-      alert('Nie udało się wysłać pliku. Sprawdź konsolę.');
     }
   };
 
@@ -88,7 +88,8 @@ function DeadPlate() {
   const handleClick = (e) => {
     if (!imageRef.current) return;
     const rect = imageRef.current.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
+    if (!rect.width || !rect.height) return;
+
     const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
 
@@ -99,20 +100,20 @@ function DeadPlate() {
       setIsSelecting(true);
     } else {
       const start = selectionStartRef.current;
-      if (!start) {
-        setIsSelecting(false);
-        return;
-      }
+      if (!start) return;
+
       const newRect = {
         x: Math.min(start.x, x),
         y: Math.min(start.y, y),
         width: Math.abs(x - start.x),
         height: Math.abs(y - start.y)
       };
+
       setCropRect(newRect);
       cropRectRef.current = newRect;
       setIsSelecting(false);
       selectionStartRef.current = null;
+
       if (newRect.width > 0.01 && newRect.height > 0.01) {
         generateCropped(newRect);
       }
@@ -121,50 +122,63 @@ function DeadPlate() {
 
   const handleMouseMove = (e) => {
     if (!isSelecting || !imageRef.current || !selectionStartRef.current) return;
+
     const rect = imageRef.current.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
     const currentX = clamp((e.clientX - rect.left) / rect.width, 0, 1);
     const currentY = clamp((e.clientY - rect.top) / rect.height, 0, 1);
     const { x: startX, y: startY } = selectionStartRef.current;
+
     const newRect = {
       x: Math.min(startX, currentX),
       y: Math.min(startY, currentY),
       width: Math.abs(currentX - startX),
       height: Math.abs(currentY - startY)
     };
+
     cropRectRef.current = newRect;
     setCropRect(newRect);
   };
 
   const handleMouseLeave = () => {
-    if (!isSelecting) return;
-    setIsSelecting(false);
-    selectionStartRef.current = null;
+    if (isSelecting) {
+      setIsSelecting(false);
+      selectionStartRef.current = null;
+    }
   };
 
   const generateCropped = (rect) => {
     if (!filePreview || !imageRef.current) return;
+
     const imgEl = imageRef.current;
     const { naturalWidth, naturalHeight } = imgEl;
-    const cropX = rect.x * naturalWidth;
-    const cropY = rect.y * naturalHeight;
-    const cropWidth = rect.width * naturalWidth;
-    const cropHeight = rect.height * naturalHeight;
 
     const canvas = document.createElement('canvas');
-    canvas.width = cropWidth;
-    canvas.height = cropHeight;
+    canvas.width = rect.width * naturalWidth;
+    canvas.height = rect.height * naturalHeight;
+
     const ctx = canvas.getContext('2d');
     const img = new Image();
+
     img.onload = () => {
-      ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+      ctx.drawImage(
+        img,
+        rect.x * naturalWidth,
+        rect.y * naturalHeight,
+        rect.width * naturalWidth,
+        rect.height * naturalHeight,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
       canvas.toBlob((blob) => {
         if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        setCroppedPreview(url);
         setCroppedBlob(blob);
+        setCroppedPreview(URL.createObjectURL(blob));
       }, 'image/png');
     };
+
     img.src = filePreview;
   };
 
@@ -181,11 +195,7 @@ function DeadPlate() {
       <div className="upload-section">
         <div className="file-input-wrapper">
           <input type="file" accept="image/*" onChange={uploadFile} />
-          <button
-            className="btn-upload"
-            onClick={sendToBackend}
-            disabled={!file}
-          >
+          <button className="btn-upload" onClick={sendToBackend} disabled={!file}>
             Przetwórz
           </button>
         </div>
@@ -206,33 +216,22 @@ function DeadPlate() {
                   <img
                     src={filePreview}
                     className="image-preview"
-                    alt="Uploaded file"
+                    alt="Uploaded"
                     ref={imageRef}
                     draggable={false}
-                    onDragStart={(e) => e.preventDefault()}
-                    onLoad={() => {
-                      const { naturalWidth, naturalHeight, clientWidth, clientHeight } = imageRef.current;
-                      console.log('Image loaded with sizes:', {
-                        naturalWidth,
-                        naturalHeight,
-                        clientWidth,
-                        clientHeight
-                      });
-                    }}
                   />
                   {cropRect && imageRef.current && (
                     <div
                       className="crop-rect"
                       style={{
-                        left: `${cropRect.x * imageRef.current.clientWidth}px`,
-                        top: `${cropRect.y * imageRef.current.clientHeight}px`,
-                        width: `${cropRect.width * imageRef.current.clientWidth}px`,
-                        height: `${cropRect.height * imageRef.current.clientHeight}px`
+                        left: cropRect.x * imageRef.current.clientWidth,
+                        top: cropRect.y * imageRef.current.clientHeight,
+                        width: cropRect.width * imageRef.current.clientWidth,
+                        height: cropRect.height * imageRef.current.clientHeight
                       }}
                     />
                   )}
                 </div>
-                <p className="hint">Kliknij i przeciągnij, aby zaznaczyć obszar do przycięcia.</p>
                 <div className="file-info">
                   <strong>Nazwa pliku:</strong> {file.name}
                   <br />
@@ -251,25 +250,21 @@ function DeadPlate() {
           <h2>2. Kadrowanie</h2>
           <div className="showcase-content">
             {croppedPreview ? (
-              <img
-                src={croppedPreview}
-                className="image-preview"
-                alt="Cropped preview"
-              />
+              <img src={croppedPreview} className="image-preview" alt="Cropped" />
             ) : (
-              <p className="no-file">Zaznacz obszar na zdjęciu, aby zobaczyć przycięcie.</p>
+              <p className="no-file">Zaznacz obszar na zdjęciu.</p>
             )}
           </div>
         </div>
       </div>
 
       <div className="result-section">
-        <h2>Wynik przetwarzania</h2>
-        <input
-          type="text"
+        <h2>Wynik</h2>
+        <textarea
           value={computerResult}
           readOnly
           className="result-input"
+          rows={6}
         />
       </div>
     </div>

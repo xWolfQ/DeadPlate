@@ -1,4 +1,4 @@
-package com.xwolfq.zmpo1.excpetion;
+package com.xwolfq.zmpo1.exception;
 
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;

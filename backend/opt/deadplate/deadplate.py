@@ -2,21 +2,17 @@ import cv2
 import pytesseract
 import re
 import numpy as np
-
-# ===================== CONFIG =====================
+import json
 
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 PL_PATTERN = r"[A-Z]{1,3}[A-Z0-9]{4,5}"
-
-# ===================== PREPROCESS =====================
 
 def preprocess(gray: np.ndarray) -> np.ndarray:
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     return clahe.apply(gray)
 
-# ===================== HEURYSTYCZNE ROI =====================
 
 def find_plate_heuristic(img: np.ndarray):
     h, w = img.shape[:2]
@@ -43,8 +39,6 @@ def find_plate_heuristic(img: np.ndarray):
 
     return None
 
-# ===================== NORMALIZACJA =====================
-
 def normalize_plate(text: str) -> str:
     return text.replace("Q", "O")
 
@@ -56,46 +50,33 @@ def fix_leading_letters(plate: str) -> str:
             chars[i] = replacements.get(chars[i], chars[i])
     return "".join(chars)
 
-# ===================== CONFIDENCE + DEBUG =====================
-
 def plate_confidence_debug(plate: str):
     if not plate:
-        return 0, ["no plate"]
+        return 0
 
     score = 0
-    debug = []
 
     if re.fullmatch(PL_PATTERN, plate):
         score += 50
-        debug.append("+50 regex match")
-    else:
-        debug.append("0 no regex match")
 
     if len(plate) in (7, 8):
         score += 20
-        debug.append("+20 correct length")
-    else:
-        debug.append(f"0 wrong length ({len(plate)})")
+
 
     digits = sum(c.isdigit() for c in plate)
     dscore = min(digits * 5, 20)
     score += dscore
-    debug.append(f"+{dscore} digits ({digits})")
 
     vowels = sum(c in "AEIOUY" for c in plate)
+
     if vowels == 0:
         score += 10
-        debug.append("+10 no vowels")
     elif vowels >= 4:
         score -= 10
-        debug.append(f"-10 too many vowels ({vowels})")
-    else:
-        debug.append(f"0 acceptable vowels ({vowels})")
 
     score = max(0, min(100, score))
-    return score, debug
+    return score
 
-# ===================== OCR + FILTER =====================
 
 def ocr_and_filter(img: np.ndarray):
     gray = preprocess(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
@@ -106,14 +87,14 @@ def ocr_and_filter(img: np.ndarray):
     ).upper()
 
     if not text.strip():
-        return None, 0, ["empty OCR"]
+        return None, 0
 
     collapsed = re.sub(r"[^A-Z0-9]", "", text)
 
     if len(collapsed) < 7:
-        return None, 0, ["too short OCR"]
+        return None, 0
 
-    # UE / PL → S / 5 / I
+
     if collapsed[0] in "S5I" and len(collapsed) > 7:
         collapsed = collapsed[1:]
 
@@ -123,10 +104,9 @@ def ocr_and_filter(img: np.ndarray):
     candidate = normalize_plate(candidate)
     candidate = fix_leading_letters(candidate)
 
-    conf, dbg = plate_confidence_debug(candidate)
-    return candidate, conf, dbg
+    conf = plate_confidence_debug(candidate)
+    return candidate, conf
 
-# ===================== PUBLIC API =====================
 
 def read_plate(image_path: str):
     img = cv2.imread(image_path)
@@ -134,28 +114,25 @@ def read_plate(image_path: str):
         return {
             "plate": None,
             "confidence": 0,
-            "confidence_debug": ["image load failed"]
         }
 
     roi = find_plate_heuristic(img)
     if roi is not None:
-        plate, conf, dbg = ocr_and_filter(roi)
+        plate, conf = ocr_and_filter(roi)
         if plate and conf >= 60:
             return {
                 "plate": plate,
                 "confidence": conf,
-                "confidence_debug": dbg
+
             }
 
-    plate, conf, dbg = ocr_and_filter(img)
+    plate, conf = ocr_and_filter(img)
     return {
         "plate": plate,
         "confidence": conf,
-        "confidence_debug": dbg
     }
 
-# ===================== TEST =====================
 
 if __name__ == "__main__":
     result = read_plate("plate.jpg")
-    print(result)
+    print(json.dumps(result))

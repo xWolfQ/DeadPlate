@@ -1,7 +1,9 @@
 package com.xwolfq.zmpo1;
 
+import java.util.List;
+
 public record PlateUploadResponse(
-        String status,
-        String filename
+        String plate,
+        int confidence
 ) {}
 

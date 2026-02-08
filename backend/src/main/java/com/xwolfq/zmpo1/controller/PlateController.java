@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -87,19 +88,19 @@ public class PlateController {
                 throw new RuntimeException("Python timeout");
             }
 
-            String result = output.toString();
-
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
                 throw new RuntimeException("OCR timeout");
             }
 
-            return ResponseEntity.ok(
-                    Map.of(
-                            "plateText", result
-                    )
-            );
+            String rawJson = output.toString().trim();
+
+            ObjectMapper mapper = new ObjectMapper();
+            PlateUploadResponse response =
+                    mapper.readValue(rawJson, PlateUploadResponse.class);
+
+            return ResponseEntity.ok(response);
 
         } finally {
             // 5️⃣ zawsze usuń plik tymczasowy
