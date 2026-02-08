@@ -3,22 +3,22 @@ import pytesseract
 import re
 import numpy as np
 
-# === KONFIGURACJA ===
-pytesseract.pytesseract.tesseract_cmd = r"/usr/bin/tesseract"
+# ===================== CONFIG =====================
 
-# granice słowa są KLUCZOWE – zapobiegają dodawaniu losowych liter
-PL_PATTERN = r"[A-Z]{1,3}\s?[A-Z0-9]{4,5}"
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
+PL_PATTERN = r"[A-Z]{1,3}[A-Z0-9]{4,5}"
 
-# === PREPROCESSING ===
-def preprocess(gray):
+# ===================== PREPROCESS =====================
+
+def preprocess(gray: np.ndarray) -> np.ndarray:
     gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    return gray
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    return clahe.apply(gray)
 
+# ===================== HEURYSTYCZNE ROI =====================
 
-# === HEURYSTYCZNA PRÓBA WYKRYCIA TABLICY ===
-def find_plate_heuristic(img):
+def find_plate_heuristic(img: np.ndarray):
     h, w = img.shape[:2]
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -34,131 +34,128 @@ def find_plate_heuristic(img):
 
     for cnt in contours:
         x, y, wc, hc = cv2.boundingRect(cnt)
-        aspect = wc / float(hc)
+        if hc == 0:
+            continue
 
-        # szeroka, niska, w dolnej połowie obrazu
-        if (
-                3.5 < aspect < 6.5 and
-                wc > w * 0.25 and
-                y > h * 0.3
-        ):
-            return img[y:y+hc, x:x+wc]
+        aspect = wc / float(hc)
+        if 3.5 < aspect < 6.5 and wc > w * 0.25 and y > h * 0.3:
+            return img[y:y + hc, x:x + wc]
 
     return None
 
+# ===================== NORMALIZACJA =====================
 
-# === NORMALIZACJA OCR ===
-def normalize_plate(plate: str) -> str:
-    plate = plate.replace(" ", "")
-
-    replacements = {
-        "Q": "O",
-
-    }
-
-    fixed = ""
-    for ch in plate:
-        fixed += replacements.get(ch, ch)
-
-    return fixed
+def normalize_plate(text: str) -> str:
+    return text.replace("Q", "O")
 
 def fix_leading_letters(plate: str) -> str:
-    # zamiana cyfr na litery tylko w CZĘŚCI WOJEWÓDZKIEJ
-    replacements = {
-        "1": "I",
-        "0": "O",
-        "8": "B",
-        "2": "Z"
-    }
-
+    replacements = {"1": "I", "0": "O", "8": "B", "2": "Z"}
     chars = list(plate)
-
-    # sprawdzamy pierwsze 3 pozycje
     for i in range(min(3, len(chars))):
         if chars[i].isdigit():
             chars[i] = replacements.get(chars[i], chars[i])
-
     return "".join(chars)
 
+# ===================== CONFIDENCE + DEBUG =====================
 
-# === OCR + FILTR ===
-def ocr_and_filter(img):
+def plate_confidence_debug(plate: str):
+    if not plate:
+        return 0, ["no plate"]
+
+    score = 0
+    debug = []
+
+    if re.fullmatch(PL_PATTERN, plate):
+        score += 50
+        debug.append("+50 regex match")
+    else:
+        debug.append("0 no regex match")
+
+    if len(plate) in (7, 8):
+        score += 20
+        debug.append("+20 correct length")
+    else:
+        debug.append(f"0 wrong length ({len(plate)})")
+
+    digits = sum(c.isdigit() for c in plate)
+    dscore = min(digits * 5, 20)
+    score += dscore
+    debug.append(f"+{dscore} digits ({digits})")
+
+    vowels = sum(c in "AEIOUY" for c in plate)
+    if vowels == 0:
+        score += 10
+        debug.append("+10 no vowels")
+    elif vowels >= 4:
+        score -= 10
+        debug.append(f"-10 too many vowels ({vowels})")
+    else:
+        debug.append(f"0 acceptable vowels ({vowels})")
+
+    score = max(0, min(100, score))
+    return score, debug
+
+# ===================== OCR + FILTER =====================
+
+def ocr_and_filter(img: np.ndarray):
     gray = preprocess(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
 
     text = pytesseract.image_to_string(
         gray,
-        config="--oem 3 --psm 6 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
-    )
+        config="--oem 3 --psm 7 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    ).upper()
 
-    text = text.upper()
+    if not text.strip():
+        return None, 0, ["empty OCR"]
 
-    candidates = re.findall(PL_PATTERN, text)
+    collapsed = re.sub(r"[^A-Z0-9]", "", text)
 
-    # 🔥 FALLBACK JEŚLI REGEX NIC NIE ZNALAZŁ
-    if not candidates:
-        cleaned = re.sub(r"[^A-Z0-9]", "", text)
-        if len(cleaned) >= 7:
-            return normalize_plate(cleaned[:7])
+    if len(collapsed) < 7:
+        return None, 0, ["too short OCR"]
 
-    # wybór najlepszego kandydata (najbliżej 7 znaków)
-    def score(c):
-        return abs(len(c.replace(" ", "")) - 7)
+    # UE / PL → S / 5 / I
+    if collapsed[0] in "S5I" and len(collapsed) > 7:
+        collapsed = collapsed[1:]
 
-    candidates = sorted(candidates, key=score)
+    matches = re.findall(PL_PATTERN, collapsed)
+    candidate = matches[0] if matches else collapsed[:7]
 
-    result = normalize_plate(candidates[0])
-    result = fix_leading_letters(result)
-    result = strip_left_garbage(result)
-    result = strip_edge_garbage(result)
-    return result
+    candidate = normalize_plate(candidate)
+    candidate = fix_leading_letters(candidate)
 
+    conf, dbg = plate_confidence_debug(candidate)
+    return candidate, conf, dbg
 
-def strip_left_garbage(plate: str) -> str:
-    # jeśli po odcięciu pierwszego znaku zostaje poprawna tablica PL
-    if (
-        len(plate) == 8 and
-        re.match(r"^[A-Z]{1,3}[A-Z0-9]{4,5}$", plate[1:])
-    ):
-        return plate[1:]
-    return plate
+# ===================== PUBLIC API =====================
 
-def strip_edge_garbage(plate: str) -> str:
-    plate = plate.replace(" ", "")
-
-    # jeśli jest za długa
-    if len(plate) > 7:
-        left = plate[1:]
-        right = plate[:-1]
-
-        pattern = re.compile(r"^[A-Z]{1,3}[A-Z0-9]{4}$")
-
-        if pattern.match(left):
-            return left
-        if pattern.match(right):
-            return right
-
-    return plate
-
-
-# === GŁÓWNA FUNKCJA ===
 def read_plate(image_path: str):
     img = cv2.imread(image_path)
     if img is None:
-        print("❌ Nie udało się wczytać obrazu")
-        return None
+        return {
+            "plate": None,
+            "confidence": 0,
+            "confidence_debug": ["image load failed"]
+        }
 
-    # 1️⃣ próba heurystyczna
     roi = find_plate_heuristic(img)
     if roi is not None:
-        result = ocr_and_filter(roi)
-        if result:
-            return result
+        plate, conf, dbg = ocr_and_filter(roi)
+        if plate and conf >= 60:
+            return {
+                "plate": plate,
+                "confidence": conf,
+                "confidence_debug": dbg
+            }
 
-    # 2️⃣ fallback – OCR całego obrazu
-    return ocr_and_filter(img)
+    plate, conf, dbg = ocr_and_filter(img)
+    return {
+        "plate": plate,
+        "confidence": conf,
+        "confidence_debug": dbg
+    }
 
+# ===================== TEST =====================
 
-# === TEST ===
 if __name__ == "__main__":
     result = read_plate("plate.jpg")
     print(result)
