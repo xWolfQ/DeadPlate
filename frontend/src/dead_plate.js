@@ -12,7 +12,6 @@ function DeadPlate() {
   const imageRef = useRef(null);
   const selectionStartRef = useRef(null);
   const [computerResult, setComputerResult] = useState('Waiting for backend processing...');
-  const [detectionResult, setDetectionResult] = useState('Waiting for detection results...');
 
   useEffect(() => {
     return () => {
@@ -61,22 +60,22 @@ function DeadPlate() {
     formData.append('image', payload, payload.name || 'cropped.png');
 
     setComputerResult('Wysyłanie na backend...');
-    setDetectionResult('Czekanie na wyniki...');
 
     try {
-      const response = await fetch('/http://localhost:8080/api/plates/upload/plate', {
+      const response = await fetch('http://localhost:8080/api/plates/upload', {
         method: 'POST',
         body: formData
       });
 
-      if (!response.ok) throw new Error('Błąd wysyłania pliku');
+  
 
       const data = await response.json();
 
       console.log('Odpowiedź z backendu:', data);
-      setComputerResult(`Przetwarzanie zakończone\n${JSON.stringify(data, null, 2)}`);
-      const detectedPlate = data.plateText || data.plate || data.plate_number || data.plateNumber;
-      setDetectionResult(detectedPlate || 'Nie wykryto rejestracji');
+      const plateText = typeof data?.plateText === 'string'
+        ? data.plateText.trim()
+        : '';
+      setComputerResult(plateText || 'Brak wyniku z backendu.');
     } catch (error) {
       console.error('Błąd:', error);
       setComputerResult(`Błąd: ${error.message}`);
@@ -266,10 +265,10 @@ function DeadPlate() {
       </div>
 
       <div className="result-section">
-        <h2>Wykryta rejestracja</h2>
+        <h2>Wynik przetwarzania</h2>
         <input
           type="text"
-          value={detectionResult}
+          value={computerResult}
           readOnly
           className="result-input"
         />
