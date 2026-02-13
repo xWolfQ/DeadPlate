@@ -18,7 +18,7 @@ Zanim zaczniesz, upewnij się, że masz zainstalowane:
   - Linux: Docker + Docker Compose
 - **Git**
 
-> ⚠️ Na Windowsie Docker Desktop musi być **uruchomiony** (zielona ikonka).
+> ⚠️ Na Windowsie Docker Desktop musi zostać **uruchomiony** (zielona ikonka).
 
 ---
 
@@ -36,7 +36,7 @@ cd DeadPlate
 docker compose build
 ```
 
-(Przy pierwszym uruchomieniu może to potrwać kilka minut)
+(Podczas pierwszego uruchomienia może trwać to kilka minut)
 
 ### 3️⃣ Uruchom aplikację
 ```bash
